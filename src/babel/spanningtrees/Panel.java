@@ -48,7 +48,7 @@ public class Panel extends JPanel implements KeyListener {
 	int [][] edgecount;
 	List<String> languages;
 	
-	int GlossID = 1;
+	int meaningClassID = 1;
 	
 	public Panel(String [] args) {
 		parseArgs(args);
@@ -176,8 +176,8 @@ public class Panel extends JPanel implements KeyListener {
 
 		double m_fScaleX = 10;
 		double m_fScaleY = 10;
-		int nW = (int) getWidth();
-		int nH = (int) getHeight();
+		int nW = getWidth();
+		int nH = getHeight();
 		m_fScaleX = (nW + 0.0f) / (m_fMaxLong - m_fMinLong);
 		m_fScaleY = (nH + 0.0f) / (m_fMaxLat - m_fMinLat);
 
@@ -189,13 +189,24 @@ public class Panel extends JPanel implements KeyListener {
 				x1,
 				y1, 
 				null);
+		if (m_fMaxLong > 180) {
+			x0 = (int)(nW2 * (-360+m_fMinLong- m_fBGImageBox[0])/(m_fBGImageBox[2] - m_fBGImageBox[0]));
+			x1 = (int)(nW2 * (-360+m_fMaxLong- m_fBGImageBox[0])/(m_fBGImageBox[2] - m_fBGImageBox[0]));
+			g.drawImage(m_bgImage,
+					0, 0, getWidth(), getHeight(),
+					x0, 
+					y0, 
+					x1,
+					y1, 
+					null);			
+		}
 		
 		g2.setColor(Color.red);
 		g2.setFont(new Font(Font.DIALOG, Font.BOLD, 20));
-		if (GlossID <= CognateIO.NGLOSSIDS) {
-			g2.drawString(GlossID + ": " + data.getGloss(GlossID), 10, 400);
+		if (meaningClassID <= CognateIO.NGLOSSIDS) {
+			g2.drawString(meaningClassID + ": " + data.getMeaningClassName(meaningClassID), 10, 400);
 		}
-		System.err.println(GlossID + ": " + data.getGloss(GlossID));
+		System.err.println(meaningClassID + ": " + data.getMeaningClassName(meaningClassID));
 
 		for (String language: locations.keySet()) {
 			Location loc = locations.get(language);
@@ -222,7 +233,7 @@ case DRAW_ALL_GLOSS:
 	JITTER = 12;
 		((Graphics2D) g).setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.10f));
 		g2.setStroke(new BasicStroke(3.0f));
-		for (GlossID = 1; GlossID < CognateIO.NGLOSSIDS; GlossID++) {
+		for (meaningClassID = 1; meaningClassID < CognateIO.NGLOSSIDS; meaningClassID++) {
 			plot(g2, JITTER, m_fScaleX, m_fScaleY);
 		}
 		break;
@@ -256,7 +267,7 @@ case DRAW_GLOSS:
 	}
 
 	void plot(Graphics2D g2, int JITTER, double m_fScaleX, double m_fScaleY) {
-		Map<Integer,Cognate> map = data.getCognates(GlossID);
+		Map<Integer,Cognate> map = data.getCognates(meaningClassID);
 		if (map != null) {
 			
 			g2.setFont(new Font(Font.DIALOG, Font.BOLD, 14));
@@ -312,8 +323,8 @@ case DRAW_GLOSS:
 	static public String COGNATE_FILE = "/home/remco/data/beast/ie/saskyY3/geo/cognates.dat";
 
 	
-	void loadLocations() {
-		locations = CognateIO.loadKMLFile(KML_FILE);
+	void loadLocations(String kmlFile) {
+		locations = CognateIO.loadKMLFile(kmlFile);
 
 		m_fMinLat = 90;
 		m_fMinLong = 180;
@@ -325,7 +336,7 @@ case DRAW_GLOSS:
 			m_fMinLong = Math.min(m_fMinLong, (float) loc.longitude);
 			m_fMaxLong = Math.max(m_fMaxLong, (float) loc.longitude);
 		}
-		float fOffset = 3f;
+		float fOffset = 10f;
 		m_fMaxLong = m_fMaxLong + fOffset;
 		m_fMaxLat = m_fMaxLat + fOffset;
 		m_fMinLong = m_fMinLong - fOffset;
@@ -337,13 +348,13 @@ case DRAW_GLOSS:
 			@Override
 			void loadCognateData(String fileName) throws Exception {
 				System.err.println("Loading " + fileName);
-				glosses = new HashMap<Integer, String>();
+				mapGlossIDtoMeaningClassName = new HashMap<Integer, String>();
 				cognateGlossMap = new HashMap<Integer, Map<Integer,Cognate>>();
 
 				List<Entry> entries = readCognates();
 				
 				for (Entry entry : entries) {
-					glosses.put(entry.GlossID, entry.Gloss);
+					mapGlossIDtoMeaningClassName.put(entry.GlossID, entry.Gloss);
 					if (cognateGlossMap.containsKey(entry.GlossID)) {
 						Map<Integer, Cognate> cognateMap = cognateGlossMap.get(entry.GlossID);
 						if (cognateMap.containsKey(entry.MultistateCode)) {
@@ -378,29 +389,45 @@ case DRAW_GLOSS:
 				List<Integer> mapPositionToGlossID = new ArrayList<>();
 				List<Integer> mapPositionToState = new ArrayList<>();
 				File file = new File(cognateFile);
+				System.err.println("Loading " + cognateFile);
 				BufferedReader fin = new BufferedReader(new FileReader(file));
 				int k = 0;
-				int gloss = 0;
+				int meanginClassID = 0;
+				String prev = "";
 				while (fin.ready()) {
 					str = fin.readLine();
-					if (str.matches(".*_group,")) {
-						str = str.replaceAll("\\s+\\d+\\s", "");
-						mapPositionToCognate.add(str);
-						mapPositionToGloss.add("groupcode");
+					String str2 = str.replaceAll("\\s*\\d+\\s", "");
+					str2 = str2.replaceAll(",", "");
+					mapPositionToCognate.add(str2);
+					str2 = str2.replaceAll("(.*)_.*", "$1");
+					mapPositionToGloss.add(str2);
+
+					if (str.replaceAll("[0-9\\s]", "").equals(prev)) {
+						//str = str.replaceAll("\\s*\\d+\\s", "");
+						//mapPositionToCognate.add(str);
+						//str = str.replaceAll("_.*", "");
+						//mapPositionToGloss.add(str);
+						mapPositionToGlossID.add(meanginClassID);
+						mapPositionToState.add(k++);
+					} else if (str.matches(".*_group,")) {
+						//str = str.replaceAll("\\s*\\d+\\s", "");
+						//mapPositionToCognate.add(str);
+						//mapPositionToGloss.add("groupcode");
 						k = 0;
-						gloss++;
-						mapPositionToGlossID.add(gloss);
+						meanginClassID++;
+						mapPositionToGlossID.add(meanginClassID);
 						mapPositionToState.add(k++);
 					} else {
-						str = str.replaceAll("\\s+\\d+\\s", "");
-						mapPositionToCognate.add(str);
-						str = str.replaceAll("_.*", "");
-						mapPositionToGloss.add(str);
-						mapPositionToGlossID.add(gloss);
+						k = 0;
+						meanginClassID++;
+						mapPositionToGlossID.add(meanginClassID);
 						mapPositionToState.add(k++);
 					}
+					prev = str.replaceAll("[0-9\\s]", "");
 				}
 				fin.close();
+				
+				CognateIO.NGLOSSIDS = meanginClassID;
 				
 				List<Entry> entries = new ArrayList<Entry>();
 				file = new File(nexusFile);
@@ -409,7 +436,7 @@ case DRAW_GLOSS:
 				// eat up header
 				do {
 					sStr = fin.readLine();
-				} while (!sStr.matches(".*matrix.*"));
+				} while (!sStr.toLowerCase().matches(".*matrix.*"));
 				do {
 					sStr = fin.readLine();
 				} while (sStr.matches(".*\\[.*"));
@@ -455,8 +482,8 @@ case DRAW_GLOSS:
 		languages = new ArrayList<String>();
 		Map<String,Integer> langMap = new HashMap<String, Integer>();
 		
-		for (GlossID = 1; GlossID < CognateIO.NGLOSSIDS; GlossID++) {		
-			Map<Integer,Cognate> map = data.getCognates(GlossID);
+		for (meaningClassID = 1; meaningClassID < CognateIO.NGLOSSIDS; meaningClassID++) {		
+			Map<Integer,Cognate> map = data.getCognates(meaningClassID);
 			if (map != null) {
 				for (Cognate c : map.values()) {
 					List<Integer> edges = c.edges;
@@ -479,7 +506,7 @@ case DRAW_GLOSS:
 				}
 			}
 		}
-		GlossID = 1;
+		meaningClassID = 1;
 	
 	}
 
@@ -487,15 +514,15 @@ case DRAW_GLOSS:
 	@Override
 	public void keyTyped(KeyEvent e) {
 		if (e.getKeyChar() == 'p') {
-			GlossID --;
-			if (GlossID < 1) {
-				GlossID = 1;
+			meaningClassID --;
+			if (meaningClassID < 1) {
+				meaningClassID = 1;
 			}
 		}
 		if (e.getKeyChar() == 'n') {
-			GlossID ++;
-			if (GlossID > CognateIO.NGLOSSIDS) {
-				GlossID = CognateIO.NGLOSSIDS;
+			meaningClassID ++;
+			if (meaningClassID > CognateIO.NGLOSSIDS) {
+				meaningClassID = CognateIO.NGLOSSIDS;
 			}
 		}
 		repaint();
@@ -545,7 +572,7 @@ case DRAW_GLOSS:
 		JFrame frame = new JFrame();
 		frame.setSize(1024, 728);
 		Panel pane = new Panel(args);
-		pane.loadLocations();
+		pane.loadLocations(KML_FILE);
 		pane.loadData(NEXUS_FILE, COGNATE_FILE);
 		pane.loadBGImage(BG_FILE);
 		frame.add(pane);
@@ -566,7 +593,7 @@ case DRAW_GLOSS:
 
         	for (int i = 1; i < CognateIO.NGLOSSIDS; i++) {
         		Graphics2D g2d = new PdfGraphics2D(cb, pane.getWidth(), pane.getHeight());
-        		pane.GlossID = i;
+        		pane.meaningClassID = i;
         		pane.paint(g2d);
         		g2d.dispose();
         		doc.newPage();
